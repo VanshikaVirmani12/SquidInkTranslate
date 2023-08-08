@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 import { IgnoreMode } from 'aws-cdk-lib';
 import { Code } from 'aws-cdk-lib/aws-codecommit';
+import * as sm from "aws-cdk-lib/aws-secretsmanager"; 
 
 export class CodepipelineBuildDeployStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -33,12 +34,19 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       ignoreMode: IgnoreMode.GIT,
       exclude: gitignore,
     });
+
+    const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
+      secretCompleteArn: 
+        "arn:aws:secretsmanager:us-east-1:250748858298:secret:CodepipelineDemo-GBc4SB"
+    }); 
+
+    const githubAccessToken = secret.secretValue; 
     
-    const codeRepo = new codecommit.Repository(this, "repo", {
-      repositoryName: "simple-code-repo",
-      // Copies files from codepipeline-build-deploy directory to the repo as the initial commit
-      code: Code.fromAsset(codeAsset, 'main'),
-    });
+    // const codeRepo = new codecommit.Repository(this, "repo", {
+    //   repositoryName: "simple-code-repo",
+    //   // Copies files from codepipeline-build-deploy directory to the repo as the initial commit
+    //   code: Code.fromAsset(codeAsset, 'main'),
+    // });
     
     // Creates an Elastic Container Registry (ECR) image repository
     const imageRepo = new ecr.Repository(this, "imageRepo");
@@ -54,10 +62,12 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       portMappings: [{ containerPort: 80 }],
     });
 
+    // source: codebuild.Source.codeCommit({ repository: codeRepo }),
+
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
-      source: codebuild.Source.codeCommit({ repository: codeRepo }),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         privileged: true,
         environmentVariables: {
@@ -76,7 +86,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // CodeBuild project that builds the Docker image
     const buildTest = new codebuild.Project(this, "BuildTest", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.yaml"),
-      source: codebuild.Source.codeCommit({ repository: codeRepo }),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,  
       }
@@ -224,11 +234,14 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     const sourceStage = {
       stageName: "Source",
       actions: [
-        new pipelineactions.CodeCommitSourceAction({
-          actionName: "AppCodeCommit",
-          branch: "main",
+        new pipelineactions.GitHubSourceAction({
+          actionName: "GitHub",
           output: sourceArtifact,
-          repository: codeRepo,
+          oauthToken: githubAccessToken,
+          branch: "main",
+          owner: "VanshikaVirmani12",
+          repo: "SquidInkTranslate",
+          trigger: pipelineactions.GitHubTrigger.WEBHOOK,
         }),
       ],
     };
