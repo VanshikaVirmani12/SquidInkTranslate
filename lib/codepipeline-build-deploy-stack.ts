@@ -1,6 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
-import * as codecommit from "aws-cdk-lib/aws-codecommit";
 import * as codedeploy from "aws-cdk-lib/aws-codedeploy";
 import * as pipeline from "aws-cdk-lib/aws-codepipeline";
 import * as pipelineactions from "aws-cdk-lib/aws-codepipeline-actions";
@@ -12,11 +11,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import * as path from "path";
 import * as fs from 'fs';
-import { Asset } from 'aws-cdk-lib/aws-s3-assets';
-import { IgnoreMode } from 'aws-cdk-lib';
-import { Code } from 'aws-cdk-lib/aws-codecommit';
 import * as sm from "aws-cdk-lib/aws-secretsmanager"; 
 
 export class CodepipelineBuildDeployStack extends cdk.Stack {
@@ -28,12 +23,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     gitignore.push('.git/');
     gitignore = gitignore.filter(g => g != 'node_modules/');
     gitignore.push('/node_modules/');
-    
-    const codeAsset = new Asset(this, 'SourceAsset', {
-      path: path.join(__dirname, "../"),
-      ignoreMode: IgnoreMode.GIT,
-      exclude: gitignore,
-    });
 
     const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
       secretCompleteArn: 
@@ -41,12 +30,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     }); 
 
     const githubAccessToken = secret.secretValue; 
-    
-    // const codeRepo = new codecommit.Repository(this, "repo", {
-    //   repositoryName: "simple-code-repo",
-    //   // Copies files from codepipeline-build-deploy directory to the repo as the initial commit
-    //   code: Code.fromAsset(codeAsset, 'main'),
-    // });
     
     // Creates an Elastic Container Registry (ECR) image repository
     const imageRepo = new ecr.Repository(this, "imageRepo");
@@ -158,7 +141,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
-    // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html
     const targetGroupBlue = new elb.ApplicationTargetGroup(
       this,
       "BlueTargetGroup",
