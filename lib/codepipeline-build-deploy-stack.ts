@@ -12,7 +12,9 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import * as fs from 'fs';
-import * as sm from "aws-cdk-lib/aws-secretsmanager"; 
+import * as sm from "aws-cdk-lib/aws-secretsmanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 
 export class CodepipelineBuildDeployStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -183,6 +185,16 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       securityGroup: albSg,
     });
 
+    const myHostedZone = new route53.HostedZone(this, 'HostedZone', {
+      zoneName: 'squidinktranslate.com',
+    });
+
+    const aliasRecord = new route53.ARecord(this, 'MyAliasRecord', {
+      target: route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(publicAlb)),
+      zone: myHostedZone,
+      recordName: 'SiteAliasRecord',
+    });
+
     // Adds a listener on port 80 to the ALB
     const albListener = publicAlb.addListener("AlbListener80", {
       open: false,
@@ -291,6 +303,11 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // Outputs the ALB public endpoint
     new cdk.CfnOutput(this, "PublicAlbEndpoint", {
       value: "http://" + publicAlb.loadBalancerDnsName,
+    });
+
+    // Output custom domain Route 53 endpoint
+    new cdk.CfnOutput(this, "Route53Endpoint", {
+      value:"http://" + aliasRecord.domainName,
     });
   }
 }
