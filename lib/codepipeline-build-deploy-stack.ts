@@ -259,12 +259,13 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       "CodeDeployGroup",
       {
         service: fargateService,
-        // Configurations for CodeDeploy Blue/Green deployments
+        // Configurations for CodeDeploy Blue/Green deploymentsokkdjfkdjfd
         blueGreenDeploymentConfig: {
           listener: albListener,
           blueTargetGroup: targetGroupBlue,
           greenTargetGroup: targetGroupGreen,
         },
+        deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
       }
     );
 
