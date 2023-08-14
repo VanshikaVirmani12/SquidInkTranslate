@@ -34,7 +34,9 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     const githubAccessToken = secret.secretValue; 
     
     // Creates an Elastic Container Registry (ECR) image repository
-    const imageRepo = new ecr.Repository(this, "imageRepo");
+    const imageRepo = new ecr.Repository(this, "imageRepo", {
+      imageScanOnPush: true,
+    });
 
     // Creates a Task Definition for the ECS Fargate service
     const fargateTaskDef = new ecs.FargateTaskDefinition(
@@ -46,8 +48,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       image: ecs.ContainerImage.fromEcrRepository(imageRepo),
       portMappings: [{ containerPort: 80 }],
     });
-
-    // source: codebuild.Source.codeCommit({ repository: codeRepo }),
 
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
@@ -277,7 +277,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
           blueTargetGroup: targetGroupBlue,
           greenTargetGroup: targetGroupGreen,
         },
-        deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
+        // deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
       }
     );
 
