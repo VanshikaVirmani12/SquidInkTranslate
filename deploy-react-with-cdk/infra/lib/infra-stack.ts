@@ -49,7 +49,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
-      buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
+      buildSpec: codebuild.BuildSpec.fromSourceFilename("src/buildspec.yaml"),
       source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         privileged: true,
