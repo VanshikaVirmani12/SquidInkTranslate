@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
+import * as codecommit from "aws-cdk-lib/aws-codecommit";
 import * as codedeploy from "aws-cdk-lib/aws-codedeploy";
 import * as pipeline from "aws-cdk-lib/aws-codepipeline";
 import * as pipelineactions from "aws-cdk-lib/aws-codepipeline-actions";
@@ -11,10 +12,11 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
+import * as path from "path";
 import * as fs from 'fs';
-import * as sm from "aws-cdk-lib/aws-secretsmanager";
-import * as route53 from "aws-cdk-lib/aws-route53";
-import * as targets from "aws-cdk-lib/aws-route53-targets";
+import { Asset } from 'aws-cdk-lib/aws-s3-assets';
+import { IgnoreMode } from 'aws-cdk-lib';
+import { Code } from 'aws-cdk-lib/aws-codecommit';
 
 export class CodepipelineBuildDeployStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -25,18 +27,21 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     gitignore.push('.git/');
     gitignore = gitignore.filter(g => g != 'node_modules/');
     gitignore.push('/node_modules/');
-
-    const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
-      secretCompleteArn: 
-        "arn:aws:secretsmanager:us-east-1:250748858298:secret:CodepipelineDemo-GBc4SB"
-    }); 
-
-    const githubAccessToken = secret.secretValue; 
+    
+    const codeAsset = new Asset(this, 'SourceAsset', {
+      path: path.join(__dirname, "../"),
+      ignoreMode: IgnoreMode.GIT,
+      exclude: gitignore,
+    });
+    
+    const codeRepo = new codecommit.Repository(this, "repo", {
+      repositoryName: "simple-code-repo",
+      // Copies files from codepipeline-build-deploy directory to the repo as the initial commit
+      code: Code.fromAsset(codeAsset, 'main'),
+    });
     
     // Creates an Elastic Container Registry (ECR) image repository
-    const imageRepo = new ecr.Repository(this, "imageRepo", {
-      imageScanOnPush: true,
-    });
+    const imageRepo = new ecr.Repository(this, "imageRepo");
 
     // Creates a Task Definition for the ECS Fargate service
     const fargateTaskDef = new ecs.FargateTaskDefinition(
@@ -52,7 +57,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
-      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
+      source: codebuild.Source.codeCommit({ repository: codeRepo }),
       environment: {
         privileged: true,
         environmentVariables: {
@@ -71,7 +76,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // CodeBuild project that builds the Docker image
     const buildTest = new codebuild.Project(this, "BuildTest", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.yaml"),
-      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
+      source: codebuild.Source.codeCommit({ repository: codeRepo }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,  
       }
@@ -143,6 +148,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
+    // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html
     const targetGroupBlue = new elb.ApplicationTargetGroup(
       this,
       "BlueTargetGroup",
@@ -185,16 +191,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       securityGroup: albSg,
     });
 
-    const myHostedZone = new route53.HostedZone(this, 'HostedZone', {
-      zoneName: 'squidinktranslate.com',
-    });
-
-    const aliasRecord = new route53.ARecord(this, 'MyAliasRecord', {
-      target: route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(publicAlb)),
-      zone: myHostedZone,
-      recordName: 'SiteAliasRecord',
-    });
-
     // Adds a listener on port 80 to the ALB
     const albListener = publicAlb.addListener("AlbListener80", {
       open: false,
@@ -228,14 +224,11 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     const sourceStage = {
       stageName: "Source",
       actions: [
-        new pipelineactions.GitHubSourceAction({
-          actionName: "GitHub",
-          output: sourceArtifact,
-          oauthToken: githubAccessToken,
+        new pipelineactions.CodeCommitSourceAction({
+          actionName: "AppCodeCommit",
           branch: "main",
-          owner: "VanshikaVirmani12",
-          repo: "SquidInkTranslate",
-          trigger: pipelineactions.GitHubTrigger.WEBHOOK,
+          output: sourceArtifact,
+          repository: codeRepo,
         }),
       ],
     };
@@ -271,13 +264,12 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       "CodeDeployGroup",
       {
         service: fargateService,
-        // Configurations for CodeDeploy Blue/Green deploymentsokkdjfkdjfd
+        // Configurations for CodeDeploy Blue/Green deployments
         blueGreenDeploymentConfig: {
           listener: albListener,
           blueTargetGroup: targetGroupBlue,
           greenTargetGroup: targetGroupGreen,
         },
-        // deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
       }
     );
 
@@ -303,11 +295,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // Outputs the ALB public endpoint
     new cdk.CfnOutput(this, "PublicAlbEndpoint", {
       value: "http://" + publicAlb.loadBalancerDnsName,
-    });
-
-    // Output custom domain Route 53 endpoint
-    new cdk.CfnOutput(this, "Route53Endpoint", {
-      value:"http://" + aliasRecord.domainName,
     });
   }
 }
