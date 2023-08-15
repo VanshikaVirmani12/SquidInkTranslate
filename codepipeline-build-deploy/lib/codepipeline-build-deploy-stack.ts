@@ -1,6 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
-import * as codecommit from "aws-cdk-lib/aws-codecommit";
 import * as codedeploy from "aws-cdk-lib/aws-codedeploy";
 import * as pipeline from "aws-cdk-lib/aws-codepipeline";
 import * as pipelineactions from "aws-cdk-lib/aws-codepipeline-actions";
@@ -10,27 +9,34 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elb from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as assets from "aws-cdk-lib/aws-s3-assets";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import * as path from "path";
+import * as fs from 'fs';
+import * as sm from "aws-cdk-lib/aws-secretsmanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 
 export class CodepipelineBuildDeployStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Creates an AWS CodeCommit repository
-    const codeRepo = new codecommit.Repository(this, "codeRepo", {
-      repositoryName: "simple-app-code-repo",
-      // Copies files from ./app directory to the repo as the initial commit
-      code: codecommit.Code.fromDirectory(
-        path.join(__dirname, "../app"),
-        "main"
-      ),
-    });
+    // modify gitignore file to remove unneeded files from the codecommit copy    
+    let gitignore = fs.readFileSync('.gitignore').toString().split(/\r?\n/);
+    gitignore.push('.git/');
+    gitignore = gitignore.filter(g => g != 'node_modules/');
+    gitignore.push('/node_modules/');
 
+    const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
+      secretCompleteArn: 
+        "arn:aws:secretsmanager:us-east-1:250748858298:secret:CodepipelineDemo-GBc4SB"
+    }); 
+
+    const githubAccessToken = secret.secretValue; 
+    
     // Creates an Elastic Container Registry (ECR) image repository
-    const imageRepo = new ecr.Repository(this, "imageRepo");
+    const imageRepo = new ecr.Repository(this, "imageRepo", {
+      imageScanOnPush: true,
+    });
 
     // Creates a Task Definition for the ECS Fargate service
     const fargateTaskDef = new ecs.FargateTaskDefinition(
@@ -45,8 +51,8 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
-      buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.yaml"),
-      source: codebuild.Source.codeCommit({ repository: codeRepo }),
+      buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         privileged: true,
         environmentVariables: {
@@ -60,6 +66,15 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
           EXECUTION_ROLE_ARN: { value: fargateTaskDef.executionRole?.roleArn },
         },
       },
+    });
+    
+    // CodeBuild project that builds the Docker image
+    const buildTest = new codebuild.Project(this, "BuildTest", {
+      buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.yaml"),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,  
+      }
     });
 
     // Grants CodeBuild project access to pull/push images from/to ECR repo
@@ -128,7 +143,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
-    // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html
     const targetGroupBlue = new elb.ApplicationTargetGroup(
       this,
       "BlueTargetGroup",
@@ -171,6 +185,16 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       securityGroup: albSg,
     });
 
+    const myHostedZone = new route53.HostedZone(this, 'HostedZone', {
+      zoneName: 'squidinktranslate.com',
+    });
+
+    const aliasRecord = new route53.ARecord(this, 'MyAliasRecord', {
+      target: route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(publicAlb)),
+      zone: myHostedZone,
+      recordName: 'SiteAliasRecord',
+    });
+
     // Adds a listener on port 80 to the ALB
     const albListener = publicAlb.addListener("AlbListener80", {
       open: false,
@@ -204,11 +228,26 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     const sourceStage = {
       stageName: "Source",
       actions: [
-        new pipelineactions.CodeCommitSourceAction({
-          actionName: "CodeCommit",
-          branch: "main",
+        new pipelineactions.GitHubSourceAction({
+          actionName: "GitHub",
           output: sourceArtifact,
-          repository: codeRepo,
+          oauthToken: githubAccessToken,
+          branch: "main",
+          owner: "VanshikaVirmani12",
+          repo: "SquidInkTranslate",
+          trigger: pipelineactions.GitHubTrigger.WEBHOOK,
+        }),
+      ],
+    };
+
+    // Run jest test and send result to CodeBuild    
+    const testStage = {
+      stageName: "Test",
+      actions: [
+        new pipelineactions.CodeBuildAction({
+          actionName: "JestCDK",
+          input: new pipeline.Artifact("SourceArtifact"),
+          project: buildTest,
         }),
       ],
     };
@@ -232,12 +271,13 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       "CodeDeployGroup",
       {
         service: fargateService,
-        // Configurations for CodeDeploy Blue/Green deployments
+        // Configurations for CodeDeploy Blue/Green deploymentsokkdjfkdjfd
         blueGreenDeploymentConfig: {
           listener: albListener,
           blueTargetGroup: targetGroupBlue,
           greenTargetGroup: targetGroupGreen,
         },
+        // deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
       }
     );
 
@@ -257,12 +297,18 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // Creates an AWS CodePipeline with source, build, and deploy stages
     new pipeline.Pipeline(this, "BuildDeployPipeline", {
       pipelineName: "ImageBuildDeployPipeline",
-      stages: [sourceStage, buildStage, deployStage],
+      stages: [sourceStage, testStage, buildStage, deployStage],
     });
 
     // Outputs the ALB public endpoint
     new cdk.CfnOutput(this, "PublicAlbEndpoint", {
       value: "http://" + publicAlb.loadBalancerDnsName,
     });
+
+    // Output custom domain Route 53 endpoint
+    new cdk.CfnOutput(this, "Route53Endpoint", {
+      value:"http://" + aliasRecord.domainName,
+    });
   }
 }
+
