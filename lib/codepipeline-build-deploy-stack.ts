@@ -14,7 +14,7 @@ import { Construct } from "constructs";
 import * as fs from 'fs';
 import * as sm from "aws-cdk-lib/aws-secretsmanager";
 
-export class CodepipelineBuildDeployStack22 extends cdk.Stack {
+export class CodepipelineBuildDeployStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
