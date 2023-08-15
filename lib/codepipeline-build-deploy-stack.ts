@@ -1,6 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import * as codebuild from "aws-cdk-lib/aws-codebuild";
-import * as codecommit from "aws-cdk-lib/aws-codecommit";
 import * as codedeploy from "aws-cdk-lib/aws-codedeploy";
 import * as pipeline from "aws-cdk-lib/aws-codepipeline";
 import * as pipelineactions from "aws-cdk-lib/aws-codepipeline-actions";
@@ -12,13 +11,10 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import * as path from "path";
 import * as fs from 'fs';
-import { Asset } from 'aws-cdk-lib/aws-s3-assets';
-import { IgnoreMode } from 'aws-cdk-lib';
-import { Code } from 'aws-cdk-lib/aws-codecommit';
+import * as sm from "aws-cdk-lib/aws-secretsmanager";
 
-export class CodepipelineBuildDeployStack extends cdk.Stack {
+export class CodepipelineBuildDeployStack22 extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -27,18 +23,13 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     gitignore.push('.git/');
     gitignore = gitignore.filter(g => g != 'node_modules/');
     gitignore.push('/node_modules/');
-    
-    const codeAsset = new Asset(this, 'SourceAsset', {
-      path: path.join(__dirname, "../"),
-      ignoreMode: IgnoreMode.GIT,
-      exclude: gitignore,
-    });
-    
-    const codeRepo = new codecommit.Repository(this, "repo", {
-      repositoryName: "simple-code-repo",
-      // Copies files from codepipeline-build-deploy directory to the repo as the initial commit
-      code: Code.fromAsset(codeAsset, 'main'),
-    });
+
+    const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
+      secretCompleteArn: 
+        "arn:aws:secretsmanager:us-east-1:250748858298:secret:CodepipelineDemo-GBc4SB"
+    }); 
+
+    const githubAccessToken = secret.secretValue; 
     
     // Creates an Elastic Container Registry (ECR) image repository
     const imageRepo = new ecr.Repository(this, "imageRepo");
@@ -54,10 +45,12 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       portMappings: [{ containerPort: 80 }],
     });
 
+    // source: codebuild.Source.codeCommit({ repository: codeRepo }),
+
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
-      source: codebuild.Source.codeCommit({ repository: codeRepo }),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         privileged: true,
         environmentVariables: {
@@ -76,7 +69,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // CodeBuild project that builds the Docker image
     const buildTest = new codebuild.Project(this, "BuildTest", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.yaml"),
-      source: codebuild.Source.codeCommit({ repository: codeRepo }),
+      source: codebuild.Source.gitHub({ owner: "VanshikaVirmani12", repo: "SquidInkTranslate" }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,  
       }
@@ -148,7 +141,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
-    // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html
     const targetGroupBlue = new elb.ApplicationTargetGroup(
       this,
       "BlueTargetGroup",
@@ -224,11 +216,14 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     const sourceStage = {
       stageName: "Source",
       actions: [
-        new pipelineactions.CodeCommitSourceAction({
-          actionName: "AppCodeCommit",
-          branch: "main",
+        new pipelineactions.GitHubSourceAction({
+          actionName: "GitHub",
           output: sourceArtifact,
-          repository: codeRepo,
+          oauthToken: githubAccessToken,
+          branch: "main",
+          owner: "VanshikaVirmani12",
+          repo: "SquidInkTranslate",
+          trigger: pipelineactions.GitHubTrigger.WEBHOOK,
         }),
       ],
     };
@@ -264,12 +259,13 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       "CodeDeployGroup",
       {
         service: fargateService,
-        // Configurations for CodeDeploy Blue/Green deployments
+        // Configurations for CodeDeploy Blue/Green deploymentsokkdjfkdjfd
         blueGreenDeploymentConfig: {
           listener: albListener,
           blueTargetGroup: targetGroupBlue,
           greenTargetGroup: targetGroupGreen,
         },
+        //deploymentConfig: codedeploy.EcsDeploymentConfig.LINEAR_10PERCENT_EVERY_1MINUTES,
       }
     );
 
