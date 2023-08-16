@@ -1,12 +1,10 @@
-// Dockerfile
-
 # # ==== CONFIGURE =====
 # # Use a Node 16 base image
 # FROM node:16-alpine 
 # # Set the working directory to /app inside the container
-# WORKDIR ./src/
+# # WORKDIR ./src/
 # # Copy app files
-# COPY . .
+# COPY ./src/ /usr/share/nginx/html
 # # ==== BUILD =====
 # # Install dependencies (npm ci makes sure the exact versions in the lockfile gets installed)
 # RUN npm ci 
