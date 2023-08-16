@@ -1,6 +1,13 @@
 version: 0.2
 
 phases:
+  install:
+    runtime-versions:
+      nodejs: 10
+    commands:
+      - printenv
+      - echo "installing something"
+
   pre_build:
     commands:
       - cd src
@@ -29,10 +36,10 @@ phases:
       - cp appspec.yaml ../
       - cp taskdef.json ../
 
-  artifacts:
-    files:
-      - "appspec.yaml"
-      - "taskdef.json"
+artifacts:
+  files:
+    - "appspec.yaml"
+    - "taskdef.json"
 
 # # Build the Docker image for the current folder 
 # # and tag it with `dockerized-react`
