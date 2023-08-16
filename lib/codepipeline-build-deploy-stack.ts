@@ -45,8 +45,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       portMappings: [{ containerPort: 80 }],
     });
 
-    // source: codebuild.Source.codeCommit({ repository: codeRepo }),
-
     // CodeBuild project that builds the Docker image
     const buildImage = new codebuild.Project(this, "BuildImage", {
       buildSpec: codebuild.BuildSpec.fromSourceFilename("app/buildspec.yaml"),
@@ -192,7 +190,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates an ECS Fargate service
     const fargateService = new ecs.FargateService(this, "FargateService", {
-      desiredCount: 1,
+      desiredCount: 2,
       serviceName: "fargate-frontend-service",
       taskDefinition: fargateTaskDef,
       cluster: new ecs.Cluster(this, "EcsCluster", {
