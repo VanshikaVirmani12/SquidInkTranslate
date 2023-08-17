@@ -1,4 +1,5 @@
-import { Construct, SecretValue, Stack, StackProps } from 'aws-cdk-lib/core';
+import { SecretValue, Stack, StackProps } from 'aws-cdk-lib/core';
+import { Construct } from 'constructs';
 import { CodePipeline, CodePipelineSource, ShellStep } from "aws-cdk-lib/pipelines";
 
 /**
