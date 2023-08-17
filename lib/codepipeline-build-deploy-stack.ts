@@ -190,7 +190,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
 
     // Creates an ECS Fargate service
     const fargateService = new ecs.FargateService(this, "FargateService", {
-      desiredCount: 2,
+      desiredCount: 1,
       serviceName: "fargate-frontend-service",
       taskDefinition: fargateTaskDef,
       cluster: new ecs.Cluster(this, "EcsCluster", {
@@ -290,5 +290,6 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     new cdk.CfnOutput(this, "PublicAlbEndpoint", {
       value: "http://" + publicAlb.loadBalancerDnsName,
     });
+
   }
 }
