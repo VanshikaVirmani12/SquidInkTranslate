@@ -76,58 +76,58 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // Grants CodeBuild project access to pull/push images from/to ECR repo
     imageRepo.grantPullPush(buildImage);
 
-    // Lambda function that triggers CodeBuild image build project
-    const triggerCodeBuild = new lambda.Function(this, "BuildLambda", {
-      architecture: lambda.Architecture.ARM_64,
-      code: lambda.Code.fromAsset("./lambda"),
-      handler: "trigger-build.handler",
-      runtime: lambda.Runtime.NODEJS_18_X,
-      environment: {
-        REGION: process.env.CDK_DEFAULT_REGION!,
-        CODEBUILD_PROJECT_NAME: buildImage.projectName,
-      },
-      // Allows this Lambda function to trigger the buildImage CodeBuild project
-      initialPolicy: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["codebuild:StartBuild"],
-          resources: [buildImage.projectArn],
-        }),
-      ],
-    });
+    // // Lambda function that triggers CodeBuild image build project
+    // const triggerCodeBuild = new lambda.Function(this, "BuildLambda", {
+    //   architecture: lambda.Architecture.ARM_64,
+    //   code: lambda.Code.fromAsset("./lambda"),
+    //   handler: "trigger-build.handler",
+    //   runtime: lambda.Runtime.NODEJS_18_X,
+    //   environment: {
+    //     REGION: process.env.CDK_DEFAULT_REGION!,
+    //     CODEBUILD_PROJECT_NAME: buildImage.projectName,
+    //   },
+    //   // Allows this Lambda function to trigger the buildImage CodeBuild project
+    //   initialPolicy: [
+    //     new iam.PolicyStatement({
+    //       effect: iam.Effect.ALLOW,
+    //       actions: ["codebuild:StartBuild"],
+    //       resources: [buildImage.projectArn],
+    //     }),
+    //   ],
+    // });
 
-    // Triggers a Lambda function using AWS SDK
-    const triggerLambda = new custom.AwsCustomResource(
-      this,
-      "BuildLambdaTrigger",
-      {
-        installLatestAwsSdk: true,
-        policy: custom.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            effect: iam.Effect.ALLOW,
-            actions: ["lambda:InvokeFunction"],
-            resources: [triggerCodeBuild.functionArn],
-          }),
-        ]),
-        onCreate: {
-          service: "Lambda",
-          action: "invoke",
-          physicalResourceId: custom.PhysicalResourceId.of("id"),
-          parameters: {
-            FunctionName: triggerCodeBuild.functionName,
-            InvocationType: "Event",
-          },
-        },
-        onUpdate: {
-          service: "Lambda",
-          action: "invoke",
-          parameters: {
-            FunctionName: triggerCodeBuild.functionName,
-            InvocationType: "Event",
-          },
-        },
-      }
-    );
+    // // Triggers a Lambda function using AWS SDK
+    // const triggerLambda = new custom.AwsCustomResource(
+    //   this,
+    //   "BuildLambdaTrigger",
+    //   {
+    //     installLatestAwsSdk: true,
+    //     policy: custom.AwsCustomResourcePolicy.fromStatements([
+    //       new iam.PolicyStatement({
+    //         effect: iam.Effect.ALLOW,
+    //         actions: ["lambda:InvokeFunction"],
+    //         resources: [triggerCodeBuild.functionArn],
+    //       }),
+    //     ]),
+    //     onCreate: {
+    //       service: "Lambda",
+    //       action: "invoke",
+    //       physicalResourceId: custom.PhysicalResourceId.of("id"),
+    //       parameters: {
+    //         FunctionName: triggerCodeBuild.functionName,
+    //         InvocationType: "Event",
+    //       },
+    //     },
+    //     onUpdate: {
+    //       service: "Lambda",
+    //       action: "invoke",
+    //       parameters: {
+    //         FunctionName: triggerCodeBuild.functionName,
+    //         InvocationType: "Event",
+    //       },
+    //     },
+    //   }
+    // );
 
     // Creates VPC for the ECS Cluster
     const clusterVpc = new ec2.Vpc(this, "ClusterVpc", {
@@ -135,7 +135,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     });
 
     // Deploys the cluster VPC after the initial image build triggers
-    clusterVpc.node.addDependency(triggerLambda);
+    // clusterVpc.node.addDependency(triggerLambda);
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
