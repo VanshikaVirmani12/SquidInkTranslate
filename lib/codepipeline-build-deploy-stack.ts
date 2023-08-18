@@ -7,9 +7,6 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elb from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import * as fs from 'fs';
 import * as sm from "aws-cdk-lib/aws-secretsmanager"; 
@@ -24,11 +21,11 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     gitignore = gitignore.filter(g => g != 'node_modules/');
     gitignore.push('/node_modules/');
 
+    // get the github oauth token stored in secrets manager
     const secret = sm.Secret.fromSecretAttributes(this, "ImportedSecret", {
       secretCompleteArn: 
         "arn:aws:secretsmanager:us-east-1:250748858298:secret:CodepipelineDemo-GBc4SB"
     }); 
-
     const githubAccessToken = secret.secretValue; 
     
     // Creates an Elastic Container Registry (ECR) image repository
@@ -76,66 +73,10 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     // Grants CodeBuild project access to pull/push images from/to ECR repo
     imageRepo.grantPullPush(buildImage);
 
-    // // Lambda function that triggers CodeBuild image build project
-    // const triggerCodeBuild = new lambda.Function(this, "BuildLambda", {
-    //   architecture: lambda.Architecture.ARM_64,
-    //   code: lambda.Code.fromAsset("./lambda"),
-    //   handler: "trigger-build.handler",
-    //   runtime: lambda.Runtime.NODEJS_18_X,
-    //   environment: {
-    //     REGION: process.env.CDK_DEFAULT_REGION!,
-    //     CODEBUILD_PROJECT_NAME: buildImage.projectName,
-    //   },
-    //   // Allows this Lambda function to trigger the buildImage CodeBuild project
-    //   initialPolicy: [
-    //     new iam.PolicyStatement({
-    //       effect: iam.Effect.ALLOW,
-    //       actions: ["codebuild:StartBuild"],
-    //       resources: [buildImage.projectArn],
-    //     }),
-    //   ],
-    // });
-
-    // Triggers a Lambda function using AWS SDK
-    // const triggerLambda = new custom.AwsCustomResource(
-    //   this,
-    //   "BuildLambdaTrigger",
-    //   {
-    //     installLatestAwsSdk: true,
-    //     policy: custom.AwsCustomResourcePolicy.fromStatements([
-    //       new iam.PolicyStatement({
-    //         effect: iam.Effect.ALLOW,
-    //         actions: ["lambda:InvokeFunction"],
-    //         resources: [triggerCodeBuild.functionArn],
-    //       }),
-    //     ]),
-    //     onCreate: {
-    //       service: "Lambda",
-    //       action: "invoke",
-    //       physicalResourceId: custom.PhysicalResourceId.of("id"),
-    //       parameters: {
-    //         FunctionName: triggerCodeBuild.functionName,
-    //         InvocationType: "Event",
-    //       },
-    //     },
-    //     onUpdate: {
-    //       service: "Lambda",
-    //       action: "invoke",
-    //       parameters: {
-    //         FunctionName: triggerCodeBuild.functionName,
-    //         InvocationType: "Event",
-    //       },
-    //     },
-    //   }
-    // );
-
     // Creates VPC for the ECS Cluster
     const clusterVpc = new ec2.Vpc(this, "ClusterVpc", {
       ipAddresses: ec2.IpAddresses.cidr("10.50.0.0/16"),
     });
-
-    // // Deploys the cluster VPC after the initial image build triggers
-    // clusterVpc.node.addDependency(triggerLambda);
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
     // registered targets within the Target Group e.g. (EC2 instances, IP addresses, Lambda functions)
@@ -231,7 +172,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       stageName: "Test",
       actions: [
         new pipelineactions.CodeBuildAction({
-          actionName: "JestCDK",
+          actionName: "UnitTestCDK",
           input: new pipeline.Artifact("SourceArtifact"),
           project: buildTest,
         }),
