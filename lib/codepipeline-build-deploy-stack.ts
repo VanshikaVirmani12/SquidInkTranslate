@@ -96,7 +96,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
     //   ],
     // });
 
-    // // Triggers a Lambda function using AWS SDK
+    // Triggers a Lambda function using AWS SDK
     // const triggerLambda = new custom.AwsCustomResource(
     //   this,
     //   "BuildLambdaTrigger",
@@ -134,7 +134,7 @@ export class CodepipelineBuildDeployStack extends cdk.Stack {
       ipAddresses: ec2.IpAddresses.cidr("10.50.0.0/16"),
     });
 
-    // Deploys the cluster VPC after the initial image build triggers
+    // // Deploys the cluster VPC after the initial image build triggers
     // clusterVpc.node.addDependency(triggerLambda);
 
     // Creates a new blue Target Group that routes traffic from the public Application Load Balancer (ALB) to the
